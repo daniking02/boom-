@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Boom! - Il gioco</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f0f0f3;
+    margin: 0; padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 {
+    margin-bottom: 10px;
+    color: #333;
+    user-select: none;
+  }
+  #menuDiv {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+  }
+  button {
+    padding: 12px 28px;
+    font-size: 20px;
+    border-radius: 30px;
+    border: none;
+    cursor: pointer;
+    background: #3b82f6;
+    color: white;
+    box-shadow: 0 6px 12px rgba(59,130,246,0.35);
+    transition: background-color 0.3s;
+    user-select: none;
+    min-width: 180px;
+  }
+  button:hover {
+    background: #2563eb;
+  }
+  #gridEl {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(10, 40px);
+    grid-template-rows: repeat(10, 40px);
+    gap: 6px;
+  }
+  .cell {
+    background: #e1e1e1;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    user-select: none;
+    transition: background-color 0.25s ease;
+  }
+  .cell.revealed {
+    cursor: default;
+    background-color: #9dd68a; /* default green */
+  }
+  /* Verde chiaro single player */
+  .cell.single-player {
+    background-color: #b7e4a6;
+    color: #2c662d;
+  }
+  /* Multplayer player 1 blu */
+  .cell.player1 {
+    background-color: #3b82f6;
+    color: white;
+  }
+  /* Multiplayer player 2 giallo */
+  .cell.player2 {
+    background-color: #facc15;
+    color: #4a4a04;
+  }
+  .cell.bomb {
+    background-color: #f87171;
+    color: white;
+    font-weight: 900;
+  }
+  #controls {
+    margin-top: 15px;
+    display: flex;
+    gap: 15px;
+    align-items: center;
+  }
+  #timerBtn {
+    font-size: 20px;
+    padding: 10px 24px;
+    border-radius: 30px;
+    cursor: default;
+    user-select: none;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    min-width: 100px;
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    transition: background-color 0.3s, color 0.3s;
+  }
+  #timerBtn.red {
+    background-color: #ef4444;
+    color: white;
+  }
+  #timerBtn.blink {
+    animation: blink 1s infinite;
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  #messageEl {
+    margin-top: 20px;
+    font-size: 22px;
+    font-weight: 700;
+    min-height: 28px;
+    user-select: none;
+    color: #444;
+  }
+  #playerTurnEl {
+    font-size: 20px;
+    font-weight: 600;
+    user-select: none;
+  }
+  #backBtn {
+    background-color: #6b7280;
+  }
+  #backBtn:hover {
+    background-color: #4b5563;
+  }
+</style>
+</head>
+<body>
+
+<h1>Boom!</h1>
+
+<div id="menuDiv">
+  <button id="startBtn">Inizia Partita</button>
+  <button id="localMultiBtn">Multiplayer Locale</button>
+</div>
+
+<div id="playerTurnEl" style="display:none;"></div>
+
+<div id="gridEl" style="display:none;"></div>
+
+<div id="controls" style="display:none;">
+  <button id="timerBtn" disabled>06:00</button>
+  <button id="pauseBtn">Pausa</button>
+  <button id="restartBtn">Ricomincia</button>
+  <button id="backBtn">Indietro</button>
+</div>
+
+<div id="messageEl"></div>
+
+<script>
+  const totalCells = 100;
+  const singlePlayerDuration = 360; // 6 minuti in secondi
+  const multiplayerDuration = 240; // 4 minuti in secondi
+
+  const menuDiv = document.getElementById('menuDiv');
+  const gridEl = document.getElementById('gridEl');
+  const controlsDiv = document.getElementById('controls');
+  const timerBtn = document.getElementById('timerBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const backBtn = document.getElementById('backBtn');
+  const startBtn = document.getElementById('startBtn');
+  const localMultiBtn = document.getElementById('localMultiBtn');
+  const messageEl = document.getElementById('messageEl');
+  const playerTurnEl = document.getElementById('playerTurnEl');
+
+  let bombIndex = Math.floor(Math.random() * totalCells);
+  let gameOver = true;
+  let revealedCount = 0;
+  let timerPaused = false;
+  let timerStarted = [false, false];
+  let timers = [singlePlayerDuration, 0];
+  let timerIntervals = [null, null];
+  let multiplayerMode = false;
+  let currentPlayer = 1;
+  let playerRevealedCount = [0, 0];
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+  }
+
+  function updateTimerBtn() {
+    if (multiplayerMode) {
+      timerBtn.textContent = `P${currentPlayer}: ${formatTime(timers[currentPlayer -1])}`;
+      timerBtn.style.backgroundColor = currentPlayer === 1 ? '#3b82f6' : '#facc15';
+      timerBtn.style.color = currentPlayer === 1 ? 'white' : '#4a4a04';
+      if(timers[currentPlayer -1] <= 30) {
+        timerBtn.classList.add('red', 'blink');
+      } else {
+        timerBtn.classList.remove('red', 'blink');
+      }
+    } else {
+      timerBtn.textContent = formatTime(timers[0]);
+      timerBtn.style.backgroundColor = '#3b82f6';
+      timerBtn.style.color = 'white';
+      if(timers[0] <= 30) {
+        timerBtn.classList.add('red', 'blink');
+      } else {
+        timerBtn.classList.remove('red', 'blink');
+      }
+    }
+  }
+
+  function startPlayerTimer(player) {
+    if(timerIntervals[player - 1]) clearInterval(timerIntervals[player - 1]);
+    timerIntervals[player - 1] = setInterval(() => {
+      if (!timerPaused && !gameOver) {
+        timers[player - 1]--;
+        updateTimerBtn();
+
+        if (timers[player - 1] <= 0) {
+          clearInterval(timerIntervals[player - 1]);
+          endGame(false, multiplayerMode ? `Giocatore ${player} ha perso!` : 'Tempo scaduto! Hai perso!');
+        }
+      }
+    }, 1000);
+  }
+
+  function startSinglePlayerTimer() {
+    startPlayerTimer(1);
+  }
+
+  function endGame(won, msg) {
+    gameOver = true;
+    messageEl.textContent = msg;
+    timerBtn.classList.remove('blink', 'red');
+    timerPaused = true;
+
+    // Ferma tutti i timer
+    timerIntervals.forEach(i => clearInterval(i));
+  }
+
+  function pauseTimer() {
+    if (gameOver) return;
+    timerPaused = !timerPaused;
+    pauseBtn.textContent = timerPaused ? 'Riprendi' : 'Pausa';
+
+    // Se timer ripreso e timer non ancora iniziato, parte al primo click (solo in single player)
+    if (!timerPaused && !timerStarted[0] && !multiplayerMode) {
+      timerStarted[0] = true;
+      startSinglePlayerTimer();
+    }
+  }
+
+  function createGrid() {
+    gridEl.innerHTML = '';
+    for (let i = 0; i < totalCells; i++) {
+      const cell = document.createElement('div');
+      cell.classList.add('cell');
+      cell.dataset.index = i;
+      cell.addEventListener('click', () => cellClicked(i));
+      gridEl.appendChild(cell);
+    }
+  }
+
+  function cellClicked(index) {
+    if (gameOver) return;
+
+    const cell = gridEl.children[index];
+    if (cell.classList.contains('revealed') || cell.classList.contains('bomb')) return; // evita doppio click
+
+    // Se è la prima mossa, parte il timer
+    if (!timerStarted[0] && !multiplayerMode) {
+      timerStarted[0] = true;
+      timers[0] = singlePlayerDuration;
+      startSinglePlayerTimer();
+    }
+    if (!timerStarted[0] && multiplayerMode && currentPlayer === 1) {
+      timerStarted[0] = true;
+      timers[0] = multiplayerDuration;
+      startPlayerTimer(1);
+    }
+    if (!timerStarted[1] && multiplayerMode && currentPlayer === 2) {
+      timerStarted[1] = true;
+      timers[1] = multiplayerDuration;
+      startPlayerTimer(2);
+    }
+
+    // Se bomba, fine partita
+    if (index === bombIndex) {
+      cell.classList.add('bomb', 'revealed');
+      if(multiplayerMode) {
+        endGame(false, `Giocatore ${currentPlayer} ha perso!`);
+      } else {
+        endGame(false, 'Hai perso! Vattela a rigioca');
+      }
+      return;
+    }
+
+    // Casella sicura
+    if(multiplayerMode) {
+      cell.classList.add('revealed');
+      if(currentPlayer === 1) cell.classList.add('player1');
+      else cell.classList.add('player2');
+
+      playerRevealedCount[currentPlayer - 1]++;
+      revealedCount++;
+
+      // Controlla vittoria se tutte le caselle tranne la bomba sono scoperte
+      if (revealedCount === totalCells - 1) {
+        endGame(true, 'Lasciamelo dire, sei un Fenomeno!');
+        return;
+      }
+
+      // Cambia turno giocatore
+      currentPlayer = currentPlayer === 1 ? 2 : 1;
+      updatePlayerTurn();
+
+    } else {
+      cell.classList.add('revealed', 'single-player');
+      revealedCount++;
+      if (revealedCount === totalCells - 1) {
+        endGame(true, 'Lasciamelo dire, sei un Fenomeno!');
+      }
+    }
+  }
+
+  function updatePlayerTurn() {
+    if (!multiplayerMode) {
+      playerTurnEl.style.display = 'none';
+      return;
+    }
+    playerTurnEl.style.display = 'block';
+    playerTurnEl.textContent = `Turno giocatore ${currentPlayer}`;
+    playerTurnEl.style.color = currentPlayer === 1 ? '#3b82f6' : '#facc15';
+    updateTimerBtn();
+  }
+
+  function resetGame() {
+    gameOver = false;
+    revealedCount = 0;
+    timerPaused = false;
+    timerStarted = [false, false];
+    currentPlayer = 1;
+    playerRevealedCount = [0, 0];
+    messageEl.textContent = '';
+    timerBtn.classList.remove('blink', 'red');
+    if(multiplayerMode) {
+      timers = [multiplayerDuration, multiplayerDuration];
+    } else {
+      timers = [singlePlayerDuration, 0];
+    }
+    updateTimerBtn();
+    updatePlayerTurn();
+    createGrid();
+    bombIndex = Math.floor(Math.random() * totalCells);
+  }
+
+  function showMenu() {
+    menuDiv.style.display = 'flex';
+    gridEl.style.display = 'none';
+    controlsDiv.style.display = 'none';
+    timerBtn.style.display = 'none';
+    playerTurnEl.style.display = 'none';
+    messageEl.textContent = '';
+    gameOver = true;
+    timerIntervals.forEach(i => clearInterval(i));
+  }
+
+  function showGameScreen() {
+    menuDiv.style.display = 'none';
+    gridEl.style.display = 'grid';
+    controlsDiv.style.display = 'flex';
+    timerBtn.style.display = 'inline-block';
+    backBtn.style.display = 'inline-block';
+    updateTimerBtn();
+    updatePlayerTurn();
+  }
+
+  function startSinglePlayer() {
+    multiplayerMode = false;
+    showGameScreen();
+    resetGame();
+  }
+
+  function startMultiplayer() {
+    multiplayerMode = true;
+    showGameScreen();
+    resetGame();
+  }
+
+  backBtn.addEventListener('click', () => {
+    timerIntervals.forEach(i => clearInterval(i));
+    gameOver = true;
+    showMenu();
+  });
+
+  startBtn.addEventListener('click', startSinglePlayer);
+  localMultiBtn.addEventListener('click', startMultiplayer);
+  restartBtn.addEventListener('click', resetGame);
+  pauseBtn.addEventListener('click', pauseTimer);
+
+  // Avvio menu
+  showMenu();
+</script>
+
+</body>
+</html>
